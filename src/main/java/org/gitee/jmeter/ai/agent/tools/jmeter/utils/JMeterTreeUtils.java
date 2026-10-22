@@ -1,0 +1,843 @@
+package org.gitee.jmeter.ai.agent.tools.jmeter.utils;
+
+import org.apache.jmeter.gui.tree.JMeterTreeNode;
+import org.apache.jmeter.gui.tree.JMeterTreeModel;
+import org.apache.jmeter.testelement.TestElement;
+import org.apache.jmeter.testelement.TestPlan;
+import org.apache.jmeter.testelement.property.JMeterProperty;
+import org.apache.jmeter.testelement.property.PropertyIterator;
+import org.apache.jmeter.testelement.property.CollectionProperty;
+import org.apache.jmeter.testelement.property.TestElementProperty;
+import org.apache.jorphan.collections.HashTree;
+import org.gitee.jmeter.ai.agent.config.AgentConfig;
+import org.gitee.jmeter.ai.utils.JMeterElementManager;
+
+import javax.swing.tree.TreePath;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Utility class for JMeter tree operations.
+ * Provides common methods for building tree data structures and querying elements.
+ */
+public class JMeterTreeUtils {
+
+    private JMeterTreeUtils() {
+        // Utility class - prevent instantiation
+    }
+
+    /**
+     * Build data structure representation of the tree starting from the given node.
+     *
+     * @param node The root node to build from
+     * @param includeProperties Whether to include element properties
+     * @param maxDepth Maximum depth to traverse (-1 for unlimited, 0 for current node only, 1 for first-level children)
+     * @param currentDepth Current depth level
+     * @return Map containing node data
+     */
+    public static Map<String, Object> buildTreeData(JMeterTreeNode node, boolean includeProperties,
+                                                      int maxDepth, int currentDepth) {
+        return buildTreeData(node, includeProperties, maxDepth, currentDepth, AgentConfig.getInstance().getMaxStringLength());
+    }
+
+    /**
+     * Build data structure representation of the tree starting from the given node.
+     *
+     * @param node The root node to build from
+     * @param includeProperties Whether to include element properties
+     * @param maxDepth Maximum depth to traverse (-1 for unlimited, 0 for current node only, 1 for first-level children)
+     * @param currentDepth Current depth level
+     * @param maxLength Maximum string length for property values
+     * @return Map containing node data
+     */
+    public static Map<String, Object> buildTreeData(JMeterTreeNode node, boolean includeProperties,
+                                                      int maxDepth, int currentDepth, int maxLength) {
+        Map<String, Object> data = new LinkedHashMap<>();
+
+        // Node basic info
+        data.put("elementId", System.identityHashCode(node));
+        data.put("depth", currentDepth);
+
+        TestElement element = node.getTestElement();
+        if (element != null) {
+            data.put("elementType", element.getClass().getSimpleName());
+            // elementId 每次组件参数值变更后，element.hashCode() 会发生改变
+            // data.put("elementId", element.hashCode());
+            data.put("name", element.getName());
+            data.put("enabled", element.isEnabled());
+
+            // Properties
+            if (includeProperties) {
+                data.put("properties", buildPropertiesData(element, maxLength));
+            }
+        } else {
+            data.put("elementType", "null");
+            data.put("name", node.getName());
+        }
+
+        // Path from root
+        data.put("path", getNodePath(node));
+
+        // Children
+        int childCount = node.getChildCount();
+        data.put("childCount", childCount);
+
+        if (childCount > 0 && (maxDepth < 0 || currentDepth < maxDepth)) {
+            List<Map<String, Object>> childrenList = new ArrayList<>(childCount);
+            for (int i = 0; i < childCount; i++) {
+                JMeterTreeNode child = (JMeterTreeNode) node.getChildAt(i);
+                childrenList.add(buildTreeData(child, includeProperties, maxDepth, currentDepth + 1, maxLength));
+            }
+            data.put("children", childrenList);
+        } else if (childCount > 0) {
+            // Depth limited
+            data.put("hasMoreChildren", true);
+        }
+
+        return data;
+    }
+
+    // ---- HashTree → JMeterTreeNode conversion (for parsing external JMX files) ----
+
+    /**
+     * Convert a HashTree (parsed from a JMX file via SaveService.loadTree)
+     * into a JMeterTreeNode tree using JMeter's own JMeterTreeModel.addSubTree(),
+     * so that existing buildTreeData/findNode methods can be reused directly.
+     *
+     * <p>Uses the same approach as JMeter's non-GUI mode (JMeter.java):
+     * <pre>
+     *   JMeterTreeModel treeModel = new JMeterTreeModel(new Object());
+     *   JMeterTreeNode root = (JMeterTreeNode) treeModel.getRoot();
+     *   treeModel.addSubTree(tree, root);
+     * </pre>
+     *
+     * <p>Tree structure after addSubTree: root(virtual) → TestPlan → ...
+     * Returns root.getChildAt(0) (the actual TestPlan node),
+     * matching the output format of GetTestPlanTreeTool.
+     *
+     * @param rootTree The HashTree returned by SaveService.loadTree()
+     * @return Root JMeterTreeNode (TestPlan), or null if the tree is empty
+     */
+    @SuppressWarnings("deprecation")
+    public static JMeterTreeNode convertHashTreeToTreeNodes(HashTree rootTree) {
+        if (rootTree == null || rootTree.list().isEmpty()) {
+            return null;
+        }
+
+        try {
+            // Same pattern as JMeter.java non-GUI mode
+            JMeterTreeModel treeModel = new JMeterTreeModel(new Object());
+            JMeterTreeNode root = (JMeterTreeNode) treeModel.getRoot();
+            treeModel.addSubTree(rootTree, root);
+
+            // root is a virtual node, first child is the actual TestPlan
+            if (root.getChildCount() > 0) {
+                return (JMeterTreeNode) root.getChildAt(0);
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Build data structure for element properties.
+     *
+     * @param element The test element
+     * @return Map of property names to values
+     */
+    public static Map<String, Object> buildPropertiesData(TestElement element) {
+        return buildPropertiesData(element, AgentConfig.getInstance().getMaxStringLength());
+    }
+
+    /**
+     * Build data structure for element properties with nested object support.
+     *
+     * @param element The test element
+     * @param maxLength Maximum string length for property values
+     * @return Map of property names to values (can be String or nested Map for ObjectProperty)
+     */
+    public static Map<String, Object> buildPropertiesData(TestElement element, int maxLength) {
+        Map<String, Object> props = new LinkedHashMap<>();
+        PropertyIterator propIterator = element.propertyIterator();
+
+        while (propIterator.hasNext()) {
+            JMeterProperty prop = propIterator.next();
+            String propName = prop.getName();
+
+            // Skip internal TestElement properties
+            if (!propName.startsWith("TestElement.")) {
+                if (prop instanceof TestElementProperty) {
+                    // Handle nested TestElement properties
+                    TestElement nestedElement = ((TestElementProperty) prop).getElement();
+                    if (nestedElement != null) {
+                        // Try to extract collection items (e.g., Arguments, HTTPFileArgs)
+                        List<Map<String, Object>> collectionItems = extractCollectionItems(nestedElement, maxLength);
+                        if (collectionItems != null) {
+                            // Output array directly (matches create/update input format)
+                            props.put(propName, collectionItems);
+                        } else {
+                            // Output nested properties as flat map (e.g., LoopController)
+                            Map<String, Object> nestedProps = buildPropertiesData(nestedElement, maxLength);
+                            props.put(propName, nestedProps);
+                        }
+                    }
+                } else if (prop instanceof CollectionProperty) {
+                    List<Map<String, Object>> items = convertCollectionToList((CollectionProperty) prop, maxLength);
+                    if (items != null && !items.isEmpty()) {
+                        props.put(propName, items);
+                    }
+                } else {
+                    String propValue = prop.getStringValue();
+                    if (propValue != null && !propValue.isEmpty()) {
+                        props.put(propName, truncate(propValue, maxLength));
+                    }
+                }
+            }
+        }
+
+        return props;
+    }
+
+    /**
+     * Extract collection items from a nested TestElement if it contains a CollectionProperty.
+     * Returns the items as a list of property maps (matching create/update input format),
+     * or null if the element does not contain a CollectionProperty.
+     */
+    private static List<Map<String, Object>> extractCollectionItems(TestElement element, int maxLength) {
+        PropertyIterator iter = element.propertyIterator();
+        while (iter.hasNext()) {
+            JMeterProperty prop = iter.next();
+            if (prop.getName().startsWith("TestElement.")) {
+                continue;
+            }
+            if (prop instanceof CollectionProperty) {
+                return convertCollectionToList((CollectionProperty) prop, maxLength);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Convert a CollectionProperty containing TestElementProperty items
+     * into a list of property maps (matching create/update input format).
+     */
+    private static List<Map<String, Object>> convertCollectionToList(CollectionProperty collProp, int maxLength) {
+        List<Map<String, Object>> items = new ArrayList<>();
+        PropertyIterator collIter = collProp.iterator();
+        while (collIter.hasNext()) {
+            JMeterProperty item = collIter.next();
+            if (item instanceof TestElementProperty) {
+                TestElement itemElement = ((TestElementProperty) item).getElement();
+                if (itemElement != null) {
+                    Map<String, Object> itemProps = new LinkedHashMap<>();
+                    // Include element name (e.g., cookie name is stored as TestElement.name)
+                    String elementName = itemElement.getName();
+                    if (elementName != null && !elementName.isEmpty()) {
+                        itemProps.put("TestElement.name", elementName);
+                    }
+                    PropertyIterator itemPropIter = itemElement.propertyIterator();
+                    while (itemPropIter.hasNext()) {
+                        JMeterProperty itemProp = itemPropIter.next();
+                        String itemPropName = itemProp.getName();
+                        if (!itemPropName.startsWith("TestElement.")) {
+                            String val = itemProp.getStringValue();
+                            if (val != null && !val.isEmpty()) {
+                                itemProps.put(itemPropName, truncate(val, maxLength));
+                            }
+                        }
+                    }
+                    if (!itemProps.isEmpty()) {
+                        items.add(itemProps);
+                    }
+                }
+            }
+        }
+        return items;
+    }
+
+    /**
+     * Get the full path of a node from root.
+     *
+     * @param node The node to get path for
+     * @return String representation of the path
+     */
+    public static String getNodePath(JMeterTreeNode node) {
+        TreePath treePath = new TreePath(node.getPath());
+        StringBuilder path = new StringBuilder();
+        Object[] pathArray = treePath.getPath();
+
+        for (int i = 0; i < pathArray.length; i++) {
+            if (i > 0) {
+                path.append(" > ");
+            }
+            Object pathComponent = pathArray[i];
+            if (pathComponent instanceof JMeterTreeNode) {
+                JMeterTreeNode treeNode = (JMeterTreeNode) pathComponent;
+                TestElement elem = treeNode.getTestElement();
+                if (elem != null && elem.getName() != null) {
+                    path.append(elem.getName());
+                } else {
+                    path.append(treeNode.getName());
+                }
+            } else {
+                path.append(pathComponent.toString());
+            }
+        }
+
+        return path.toString();
+    }
+
+    /**
+     * Find a node in the tree by element name.
+     *
+     * @param rootNode The root node to search from
+     * @param name The name to search for
+     * @return The first matching node, or null if not found
+     */
+    public static JMeterTreeNode findNodeByName(JMeterTreeNode rootNode, String name) {
+        return findNodeByName(rootNode, name, false);
+    }
+
+    /**
+     * Find a node in the tree by element name.
+     *
+     * @param rootNode The root node to search from
+     * @param name The name to search for
+     * @param exactMatch If true, requires exact match; if false, uses contains
+     * @return The first matching node, or null if not found
+     */
+    public static JMeterTreeNode findNodeByName(JMeterTreeNode rootNode, String name, boolean exactMatch) {
+        if (rootNode == null || name == null) {
+            return null;
+        }
+
+        TestElement element = rootNode.getTestElement();
+        if (element != null) {
+            String elementName = element.getName();
+            if (elementName != null) {
+                boolean matches = exactMatch
+                    ? elementName.equals(name)
+                    : elementName.contains(name);
+                if (matches) {
+                    return rootNode;
+                }
+            }
+        }
+
+        // Search children
+        int childCount = rootNode.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            JMeterTreeNode child = (JMeterTreeNode) rootNode.getChildAt(i);
+            JMeterTreeNode found = findNodeByName(child, name, exactMatch);
+            if (found != null) {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Find all nodes in the tree matching the given element name.
+     *
+     * @param rootNode The root node to search from
+     * @param name The name to search for
+     * @param exactMatch If true, requires exact match; if false, uses contains
+     * @return List of all matching nodes
+     */
+    public static List<JMeterTreeNode> findNodesByName(JMeterTreeNode rootNode, String name, boolean exactMatch) {
+        List<JMeterTreeNode> results = new ArrayList<>();
+        findNodesByName(rootNode, name, exactMatch, results);
+        return results;
+    }
+
+    private static void findNodesByName(JMeterTreeNode node, String name, boolean exactMatch, List<JMeterTreeNode> results) {
+        TestElement element = node.getTestElement();
+        if (element != null) {
+            String elementName = element.getName();
+            if (elementName != null) {
+                boolean matches = exactMatch ? elementName.equals(name) : elementName.contains(name);
+                if (matches) {
+                    results.add(node);
+                }
+            }
+        }
+
+        int childCount = node.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            findNodesByName((JMeterTreeNode) node.getChildAt(i), name, exactMatch, results);
+        }
+    }
+
+    /**
+     * Find nodes in the tree by element type.
+     *
+     * @param rootNode The root node to search from
+     * @param elementType The simple class name to search for (e.g., "HTTPSamplerProxy")
+     * @return List of matching nodes
+     */
+    public static List<JMeterTreeNode> findNodesByType(JMeterTreeNode rootNode, String elementType) {
+        List<JMeterTreeNode> results = new ArrayList<>();
+        findNodesByType(rootNode, elementType, results);
+        return results;
+    }
+
+    private static void findNodesByType(JMeterTreeNode node, String elementType, List<JMeterTreeNode> results) {
+        TestElement element = node.getTestElement();
+        if (element != null) {
+            String className = element.getClass().getSimpleName();
+            if (className.equals(elementType)) {
+                results.add(node);
+            }
+        }
+
+        // Search children
+        int childCount = node.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            JMeterTreeNode child = (JMeterTreeNode) node.getChildAt(i);
+            findNodesByType(child, elementType, results);
+        }
+    }
+
+    /**
+     * Find nodes matching both model class simple name and GUI class full name.
+     *
+     * @param rootNode The root node to search from
+     * @param modelClassSimpleName The model class simple name (e.g., "HTTPSamplerProxy")
+     * @param guiClassName The GUI class full name (e.g., "org.apache.jmeter.protocol.http.control.gui.HttpTestSampleGui")
+     * @return List of matching nodes
+     */
+    public static List<JMeterTreeNode> findNodesByTypeAndGui(JMeterTreeNode rootNode,
+                                                              String modelClassSimpleName,
+                                                              String guiClassName) {
+        List<JMeterTreeNode> results = new ArrayList<>();
+        findNodesByTypeAndGui(rootNode, modelClassSimpleName, guiClassName, results);
+        return results;
+    }
+
+    private static void findNodesByTypeAndGui(JMeterTreeNode node, String modelClassSimpleName,
+                                               String guiClassName, List<JMeterTreeNode> results) {
+        TestElement element = node.getTestElement();
+        if (element != null) {
+            String className = element.getClass().getSimpleName();
+            String elementGuiClass = element.getPropertyAsString(TestElement.GUI_CLASS);
+            if (className.equals(modelClassSimpleName) && guiClassName.equals(elementGuiClass)) {
+                results.add(node);
+            }
+        }
+
+        int childCount = node.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            JMeterTreeNode child = (JMeterTreeNode) node.getChildAt(i);
+            findNodesByTypeAndGui(child, modelClassSimpleName, guiClassName, results);
+        }
+    }
+
+    /**
+     * Find a node in the tree by path.
+     *
+     * @param rootNode The root node to search from
+     * @param path The path to search for (e.g., "Test Plan > Thread Group > HTTP Request")
+     * @param separator The path separator (default: " > ")
+     * @return The matching node, or null if not found
+     */
+    public static JMeterTreeNode findNodeByPath(JMeterTreeNode rootNode, String path, String separator) {
+        if (path == null || path.isEmpty()) {
+            return null;
+        }
+
+        String[] parts = path.split(separator);
+        return findNodeByPath(rootNode, parts, 0);
+    }
+
+    /**
+     * Find a node in the tree by path using default separator.
+     *
+     * @param rootNode The root node to search from
+     * @param path The path to search for
+     * @return The matching node, or null if not found
+     */
+    public static JMeterTreeNode findNodeByPath(JMeterTreeNode rootNode, String path) {
+        return findNodeByPath(rootNode, path, " > ");
+    }
+
+    private static JMeterTreeNode findNodeByPath(JMeterTreeNode node, String[] pathParts, int index) {
+        if (index >= pathParts.length) {
+            return node;
+        }
+
+        String targetName = pathParts[index].trim();
+
+        // Check current node
+        TestElement element = node.getTestElement();
+        if (element != null && targetName.equals(element.getName())) {
+            return findNodeByPath(node, pathParts, index + 1);
+        }
+
+        // Search children
+        int childCount = node.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            JMeterTreeNode child = (JMeterTreeNode) node.getChildAt(i);
+            TestElement childElement = child.getTestElement();
+            if (childElement != null && targetName.equals(childElement.getName())) {
+                JMeterTreeNode found = findNodeByPath(child, pathParts, index + 1);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Find a node in the tree by its element ID (identityHashCode).
+     *
+     * @param rootNode  The root node to search from
+     * @param elementId The element ID to search for
+     * @return The matching node, or null if not found
+     */
+    public static JMeterTreeNode findNodeByElementId(JMeterTreeNode rootNode, int elementId) {
+        if (rootNode == null) {
+            return null;
+        }
+        if (System.identityHashCode(rootNode) == elementId) {
+            return rootNode;
+        }
+        int childCount = rootNode.getChildCount();
+        for (int i = 0; i < childCount; i++) {
+            JMeterTreeNode child = (JMeterTreeNode) rootNode.getChildAt(i);
+            JMeterTreeNode found = findNodeByElementId(child, elementId);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Truncate string to max length.
+     *
+     * @param str The string to truncate
+     * @param max Maximum length
+     * @return Truncated string or original if under limit
+     */
+    public static String truncate(String str, int max) {
+        if (str == null) {
+            return null;
+        }
+        if (str.length() <= max) {
+            return str;
+        }
+        return str.substring(0, max) + "...(truncated)";
+    }
+
+    /**
+     * Find the element type for a given node by looking up the GUI class name.
+     * This performs a reverse lookup in the ELEMENT_CLASS_MAP to find the element type.
+     *
+     * @param node The node to get element type for
+     * @return The normalized element type, or null if not found
+     */
+    public static String getElementType(JMeterTreeNode node) {
+        if (node == null) {
+            return null;
+        }
+
+        TestElement element = node.getTestElement();
+        if (element == null) {
+            return null;
+        }
+
+        // Get the GUI class name and model class name to determine element type
+        String guiClass = element.getPropertyAsString(TestElement.GUI_CLASS);
+        String modelClass = element.getClass().getName();
+        if (guiClass == null || guiClass.isEmpty()) {
+            return null;
+        }
+
+        // First, try exact match on both GUI and model class (handles shared GUI classes like TestBeanGUI)
+        for (Map.Entry<String, JMeterElementManager.ElementClassInfo> entry :
+                JMeterElementManager.getElementClassMap().entrySet()) {
+            if (guiClass.equals(entry.getValue().getGuiClassName())
+                    && modelClass.equals(entry.getValue().getModelClassName())) {
+                return entry.getKey();
+            }
+        }
+
+        // Fallback: GUI class only (for backward compatibility)
+        for (Map.Entry<String, JMeterElementManager.ElementClassInfo> entry :
+                JMeterElementManager.getElementClassMap().entrySet()) {
+            if (guiClass.equals(entry.getValue().getGuiClassName())) {
+                return entry.getKey();
+            }
+        }
+
+        return null;
+    }
+
+    // ---- Property query methods (shared by QueryElementPropertiesTool and ParseJmxFileTool) ----
+
+    /**
+     * Recursively collect all nodes from the tree.
+     */
+    public static void collectAllNodes(JMeterTreeNode node, List<JMeterTreeNode> result) {
+        if (node.getTestElement() != null) {
+            result.add(node);
+        }
+        for (int i = 0; i < node.getChildCount(); i++) {
+            collectAllNodes((JMeterTreeNode) node.getChildAt(i), result);
+        }
+    }
+
+    /**
+     * Match properties of a TestElement against the given criteria.
+     * Returns list of matched property paths.
+     */
+    public static List<String> matchProperties(TestElement element, String nameQuery, String valueQuery, boolean exact) {
+        List<String> matches = new ArrayList<>();
+
+        String elementName = element.getName();
+        if (elementName != null && matchesCriteria("name", elementName, nameQuery, valueQuery, exact)) {
+            matches.add("name");
+        }
+        String elementComments = element.getComment();
+        if (elementComments != null && !elementComments.isEmpty()
+                && matchesCriteria("comment", elementComments, nameQuery, valueQuery, exact)) {
+            matches.add("comment");
+        }
+
+        PropertyIterator iter = element.propertyIterator();
+        while (iter.hasNext()) {
+            JMeterProperty prop = iter.next();
+            String propName = prop.getName();
+            if (propName.startsWith("TestElement.")) continue;
+
+            if (prop instanceof TestElementProperty) {
+                TestElement nestedElement = ((TestElementProperty) prop).getElement();
+                if (nestedElement != null) {
+                    matchNestedProperties(nestedElement, propName, nameQuery, valueQuery, exact, matches);
+                }
+            } else if (prop instanceof CollectionProperty) {
+                matchCollectionItems((CollectionProperty) prop, propName, nameQuery, valueQuery, exact, matches);
+            } else {
+                String propValue = prop.getStringValue();
+                if (matchesCriteria(propName, propValue, nameQuery, valueQuery, exact)) {
+                    matches.add(propName);
+                }
+            }
+        }
+        return matches;
+    }
+
+    private static void matchNestedProperties(TestElement element, String parentPath,
+                                               String nameQuery, String valueQuery, boolean exact,
+                                               List<String> matches) {
+        PropertyIterator iter = element.propertyIterator();
+        while (iter.hasNext()) {
+            JMeterProperty prop = iter.next();
+            String propName = prop.getName();
+            if (propName.startsWith("TestElement.")) continue;
+
+            String fullPath = parentPath + "." + propName;
+
+            if (prop instanceof TestElementProperty) {
+                TestElement nestedElement = ((TestElementProperty) prop).getElement();
+                if (nestedElement != null) {
+                    matchNestedProperties(nestedElement, fullPath, nameQuery, valueQuery, exact, matches);
+                }
+            } else if (prop instanceof CollectionProperty) {
+                matchCollectionItems((CollectionProperty) prop, fullPath, nameQuery, valueQuery, exact, matches);
+            } else {
+                String propValue = prop.getStringValue();
+                if (matchesCriteria(fullPath, propValue, nameQuery, valueQuery, exact)) {
+                    matches.add(fullPath);
+                }
+            }
+        }
+    }
+
+    private static void matchCollectionItems(CollectionProperty collProp, String parentPath,
+                                              String nameQuery, String valueQuery, boolean exact,
+                                              List<String> matches) {
+        PropertyIterator iter = collProp.iterator();
+        int index = 0;
+        while (iter.hasNext()) {
+            JMeterProperty item = iter.next();
+            String itemPath = parentPath + "[" + index + "]";
+
+            if (item instanceof TestElementProperty) {
+                TestElement itemElement = ((TestElementProperty) item).getElement();
+                if (itemElement != null) {
+                    String elementName = itemElement.getName();
+                    if (elementName != null && !elementName.isEmpty()) {
+                        String namePath = itemPath + ".TestElement.name";
+                        if (matchesCriteria(namePath, elementName, nameQuery, valueQuery, exact)) {
+                            matches.add(namePath);
+                        }
+                    }
+                    matchNestedProperties(itemElement, itemPath, nameQuery, valueQuery, exact, matches);
+                }
+            } else {
+                String itemValue = item.getStringValue();
+                if (matchesCriteria(itemPath, itemValue, nameQuery, valueQuery, exact)) {
+                    matches.add(itemPath);
+                }
+            }
+            index++;
+        }
+    }
+
+    static boolean matchesCriteria(String propName, String propValue,
+                                   String nameQuery, String valueQuery, boolean exact) {
+        boolean nameMatch = nameQuery.isEmpty() || propName.equals(nameQuery);
+        boolean valueMatch = valueQuery.isEmpty() ||
+                (propValue != null && matchText(propValue, valueQuery, exact));
+        return nameMatch && valueMatch;
+    }
+
+    static boolean matchText(String text, String query, boolean exact) {
+        return exact ? text.equals(query) : text.contains(query);
+    }
+
+    // ---- Structural tree helpers (shared by Move/Delete/CopyPaste and the batch tools) ----
+
+    /**
+     * Check if the node is a TestPlan root node (cannot be moved/deleted).
+     * True if the element is a TestPlan, or if its parent is the virtual root (no TestElement).
+     */
+    public static boolean isTestPlanRootNode(JMeterTreeNode node) {
+        if (node == null) {
+            return false;
+        }
+        TestElement testElement = node.getTestElement();
+        if (testElement == null) {
+            return false;
+        }
+        if (testElement instanceof TestPlan) {
+            return true;
+        }
+        JMeterTreeNode parent = (JMeterTreeNode) node.getParent();
+        if (parent != null && parent.getTestElement() == null) {
+            // Parent has no TestElement, meaning parent is the virtual root node
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Check if the node can be safely removed (delegates to TestElement.canRemove()).
+     */
+    public static boolean canRemoveNode(JMeterTreeNode node) {
+        if (node == null) {
+            return false;
+        }
+        TestElement testElement = node.getTestElement();
+        if (testElement == null) {
+            return false;
+        }
+        return testElement.canRemove();
+    }
+
+    /**
+     * Recursively check if {@code node} is a descendant of {@code ancestor}.
+     */
+    public static boolean isDescendant(JMeterTreeNode node, JMeterTreeNode ancestor) {
+        for (int i = 0; i < ancestor.getChildCount(); i++) {
+            javax.swing.tree.TreeNode child = ancestor.getChildAt(i);
+            if (child == node) {
+                return true;
+            }
+            if (child instanceof JMeterTreeNode jmeterChild && isDescendant(node, jmeterChild)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if {@code targetNode} is in the subtree of {@code sourceNode} (circular-reference check).
+     * Returns true if targetNode equals sourceNode or is a descendant of it.
+     */
+    public static boolean isTargetInSubtreeOfSource(JMeterTreeNode targetNode, JMeterTreeNode sourceNode) {
+        if (targetNode == null || sourceNode == null) {
+            return false;
+        }
+        if (targetNode == sourceNode) {
+            return true;
+        }
+        return isDescendant(targetNode, sourceNode);
+    }
+
+    /**
+     * Validate the position parameter format.
+     * Valid: {@code null}, {@code "last"}, {@code "first"}, {@code "before:<id>"}, {@code "after:<id>"} (id &gt; 0).
+     */
+    public static boolean isValidPositionFormat(String position) {
+        if (position == null || "last".equals(position)) {
+            return true;
+        }
+        if ("first".equals(position)) {
+            return true;
+        }
+        if (position.startsWith("before:") || position.startsWith("after:")) {
+            String idPart = position.substring(position.indexOf(':') + 1);
+            try {
+                int refId = Integer.parseInt(idPart);
+                return refId > 0;
+            } catch (NumberFormatException e) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Calculate the insert index for a position spec within {@code targetParent}.
+     * <p>For {@code before:<id>}/{@code after:<id>}, returns {@code -1} if the reference node
+     * cannot be found or is not a direct child of {@code targetParent}. Callers decide the
+     * fallback policy for the {@code -1} case (single-element tools fall back to {@code last};
+     * batch tools validate up front so they never hit {@code -1}).
+     *
+     * @return insert index (&ge; 0), or {@code -1} if a before/after reference is unresolved
+     */
+    public static int calculateInsertPosition(JMeterTreeNode targetParent, String position, JMeterTreeNode root) {
+        if ("first".equals(position)) {
+            return 0;
+        }
+        if (position == null || "last".equals(position)) {
+            return targetParent.getChildCount();
+        }
+
+        if (position.startsWith("before:")) {
+            try {
+                int refId = Integer.parseInt(position.substring("before:".length()));
+                JMeterTreeNode refNode = findNodeByElementId(root, refId);
+                if (refNode != null && refNode.getParent() == targetParent) {
+                    return targetParent.getIndex(refNode);
+                }
+                return -1;
+            } catch (NumberFormatException e) {
+                return -1;
+            }
+        }
+
+        if (position.startsWith("after:")) {
+            try {
+                int refId = Integer.parseInt(position.substring("after:".length()));
+                JMeterTreeNode refNode = findNodeByElementId(root, refId);
+                if (refNode != null && refNode.getParent() == targetParent) {
+                    return targetParent.getIndex(refNode) + 1;
+                }
+                return -1;
+            } catch (NumberFormatException e) {
+                return -1;
+            }
+        }
+
+        return targetParent.getChildCount(); // default to last
+    }
+}

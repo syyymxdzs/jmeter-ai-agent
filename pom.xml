@@ -1,0 +1,369 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.gitee</groupId>
+    <artifactId>jmeter-agent</artifactId>
+    <version>0.3.0</version>
+    <name>jmeter-agent</name>
+    <description>Gitee Ai - JMeter Agent for performance engineers</description>
+    <licenses>
+        <license>
+            <name>The MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+    <developers>
+        <developer>
+            <id>gitee</id>
+            <name>gitee.com</name>
+            <email>contact@gitee.com</email>
+        </developer>
+    </developers>
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <jmeter.home>E:/jmeter/apache-jmeter-5.6.3</jmeter.home>
+        <flexmark.version>0.64.8</flexmark.version>
+    </properties>
+    <repositories>
+        <repository>
+            <id>jetbrains-intellij-deps</id>
+            <url>https://packages.jetbrains.team/maven/p/ij/intellij-dependencies/</url>
+        </repository>
+    </repositories>
+    <dependencies>
+        <dependency>
+            <groupId>com.anthropic</groupId>
+            <artifactId>anthropic-java</artifactId>
+            <version>2.18.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.openai</groupId>
+            <artifactId>openai-java</artifactId>
+            <version>4.43.0</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.ollama4j</groupId>
+            <artifactId>ollama4j</artifactId>
+            <version>1.1.6</version>
+        </dependency>
+        <dependency>
+            <groupId>com.langchain.smith</groupId>
+            <artifactId>langsmith-java</artifactId>
+            <version>0.1.0-beta.7</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.squareup.okhttp3</groupId>
+                    <artifactId>okhttp-jvm</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+            <version>2.2</version>
+        </dependency>
+        <dependency>
+            <groupId>com.knuddels</groupId>
+            <artifactId>jtokkit</artifactId>
+            <version>1.1.0</version>
+        </dependency>
+        <!-- Flexmark-java: markdown -> HTML renderer for the JEditorPane text/html chat path
+             (see MarkdownParserHolder.renderToHtml). -->
+        <dependency>
+            <groupId>com.vladsch.flexmark</groupId>
+            <artifactId>flexmark</artifactId>
+            <version>${flexmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.vladsch.flexmark</groupId>
+            <artifactId>flexmark-ext-tables</artifactId>
+            <version>${flexmark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.jmeter</groupId>
+            <artifactId>ApacheJMeter_core</artifactId>
+            <version>5.6.3</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>net.sf.saxon</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>        
+        <dependency>
+            <groupId>org.apache.jmeter</groupId>
+            <artifactId>ApacheJMeter_java</artifactId>
+            <version>5.6.3</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-math3</groupId>
+                    <artifactId>commons-math3</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>commons-pool2</groupId>
+                    <artifactId>commons-pool2</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.jmeter</groupId>
+                    <artifactId>ApacheJMeter_http</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>net.sf.saxon</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- ApacheJMeter_http for testing HTTP-related components (HTTPArgument, Header, Cookie, HTTPFileArg)
+             Used by SchemaBasedPropertyHandlerTest. Test-scope only, does not affect runtime packaging. -->
+        <dependency>
+            <groupId>org.apache.jmeter</groupId>
+            <artifactId>ApacheJMeter_http</artifactId>
+            <version>5.6.3</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>net.sf.saxon</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-api</artifactId>
+            <version>2.17.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-core</artifactId>
+            <version>2.17.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j-impl</artifactId>
+            <version>2.17.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
+            <version>3.10.0</version>
+        </dependency>
+
+        <!-- JUnit 5 dependencies -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>5.10.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <version>5.10.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-params</artifactId>
+            <version>5.10.1</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Mockito for mocking in tests -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.8.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>5.8.0</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.10.0</version>
+                <configuration>
+                    <source>17</source>
+                    <target>17</target>
+                    <encoding>UTF-8</encoding>
+                    <meminitial>128m</meminitial>
+                    <maxmem>512m</maxmem>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.7.1</version>
+                <configuration>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
+                    <archive>
+                        <manifestEntries>
+                            <Class-Path>../lib/ext/ApacheJMeter_core.jar</Class-Path>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>assemble-all</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.5.1</version>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                            <artifactSet>
+                                <excludes>
+                                    <exclude>org.apache.jmeter:*</exclude>
+                                    <exclude>net.sf.saxon:*</exclude>
+                                </excludes>
+                            </artifactSet>
+                    <transformers>
+                        <!-- 设 Main-Class 让 java -jar jmeter-agent-<ver>.jar 可直接跑 CLI。
+                             不影响插件加载(JMeter 经 lib/ext + META-INF/services 加载,不看 manifest)。 -->
+                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                            <mainClass>org.gitee.jmeter.ai.cli.JmeterCli</mainClass>
+                        </transformer>
+                    </transformers>
+                        </configuration>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            
+            <!-- Configure Surefire for JUnit 5 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.3</version>
+                <configuration>
+                    <forkCount>1</forkCount>
+                </configuration>
+            </plugin>
+            <!-- Copy JAR to JMeter lib/ext directory -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>copy-to-jmeter</id>
+                        <phase>install</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <!-- <copy file="${project.build.directory}/${project.build.finalName}.jar"
+                                      todir="C:/Users/Navee/tools/apache-jmeter-5.6.3/lib/ext"/> -->
+                                <copy file="${project.build.directory}/${project.build.finalName}.jar"
+                                    todir="${jmeter.home}/lib/ext"/>
+
+                                <!-- Copy built-in skills to JMeter bin/jmeter-agent/skills directory -->
+                                <delete dir="${jmeter.home}/bin/jmeter-agent/skills" quiet="true"/>
+                                <mkdir dir="${jmeter.home}/bin/jmeter-agent/skills"/>
+                                <copy todir="${jmeter.home}/bin/jmeter-agent/skills">
+                                    <fileset dir="${project.basedir}/src/main/jmeter-agent/skills"/>
+                                </copy>
+
+                                <!-- Copy template markdown files to JMeter bin/jmeter-agent directory -->
+                                <delete file="${jmeter.home}/bin/jmeter-agent/AGENTS.md" quiet="true"/>
+                                <delete file="${jmeter.home}/bin/jmeter-agent/SOUL.md" quiet="true"/>
+                                <delete file="${jmeter.home}/bin/jmeter-agent/TOOLS.md" quiet="true"/>
+                                <delete file="${jmeter.home}/bin/jmeter-agent/USER.md" quiet="true"/>
+                                <copy todir="${jmeter.home}/bin/jmeter-agent">
+                                    <fileset dir="${project.basedir}/src/main/resources/templates" includes="AGENTS.md,SOUL.md,TOOLS.md,USER.md"/>
+                                </copy>
+
+                                <!-- Copy CLI launch scripts to JMeter bin/ -->
+                                <copy todir="${jmeter.home}/bin">
+                                    <fileset dir="${project.basedir}/src/main/resources/bin" includes="jmeter-cli.bat,jmeter-cli.sh"/>
+                                </copy>
+                                <chmod file="${jmeter.home}/bin/jmeter-cli.sh" perm="755"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!-- 仅供本地验证:`mvn install -Dlaunch.gui=true`(且 Windows)时启动 JMeter GUI。
+         默认 `mvn install` 只复制文件、不弹窗,保证跨平台与 CI 可移植。
+         osfamily="windows" 是权威平台闸:非 Windows 即便 profile 被激活,exec 也会静默跳过。 -->
+    <profiles>
+        <profile>
+            <id>launch-gui</id>
+            <activation>
+                <property>
+                    <name>launch.gui</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>launch-gui</id>
+                                <phase>install</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <exec executable="cmd.exe" dir="${jmeter.home}/bin"
+                                              osfamily="windows" spawn="true">
+                                            <arg value="/c"/>
+                                            <arg value="start"/>
+                                            <arg value="${jmeter.home}/bin/jmeter.bat"/>
+                                        </exec>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>
